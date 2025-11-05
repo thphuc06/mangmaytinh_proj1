@@ -3,6 +3,8 @@ import sys, traceback, threading, socket
 
 from VideoStream import VideoStream
 from RtpPacket import RtpPacket
+import math
+import time
 
 class ServerWorker:
 	SETUP = 'SETUP'
@@ -107,6 +109,22 @@ class ServerWorker:
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
 			
+	def split_frame(self, data, frameNumber, address, port):
+		MTU = 1400
+		packets = math.ceil(len(data) / MTU) #number of packets of 1 frame
+		i = 0
+		while i < packets:
+			offset = i * MTU
+			chunk = data[offset:offset + MTU]
+
+			seq = frameNumber * 10000 + i
+			marker = 1 if offset + MTU >= len(data) else 0
+			packet = self.makeRtp(chunk, seq, marker)
+			self.clientInfo['rtpSocket'].sendto(packet, (address, port))
+
+			time.sleep(0.0001)
+			i += 1
+			
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
 		while True:
@@ -116,26 +134,29 @@ class ServerWorker:
 			if self.clientInfo['event'].isSet(): 
 				break 
 				
-			data = self.clientInfo['videoStream'].nextFrame()
+			data = self.clientInfo['videoStream'].nextFrame() #bytes
+
 			if data: 
 				frameNumber = self.clientInfo['videoStream'].frameNbr()
+		
 				try:
 					address = self.clientInfo['rtspSocket'][1][0]
 					port = int(self.clientInfo['rtpPort'])
-					self.clientInfo['rtpSocket'].sendto(self.makeRtp(data, frameNumber),(address,port))
+					# self.clientInfo['rtpSocket'].sendto(self.makeRtp(data, frameNumber),(address,port))
+					self.split_frame(data, frameNumber, address, port)
 				except:
 					print("Connection Error")
 					#print('-'*60)
 					#traceback.print_exc(file=sys.stdout)
 					#print('-'*60)
-
-	def makeRtp(self, payload, frameNbr):
+	#add marker parameter
+	def makeRtp(self, payload, frameNbr, marker):
 		"""RTP-packetize the video data."""
 		version = 2
 		padding = 0
 		extension = 0
 		cc = 0
-		marker = 0
+		# marker = marker
 		pt = 26 # MJPEG type
 		seqnum = frameNbr
 		ssrc = 0 
