@@ -33,7 +33,8 @@ class Client:
 		self.requestSent = -1
 		self.teardownAcked = 0
 		self.connectToServer()
-		self.frameNbr = 0
+		self.packetNbr = 0 #change from FrameNbr to packet 
+		self.fragmentBuffer = []
 		
 	def createWidgets(self):
 		"""Build GUI."""
@@ -99,12 +100,21 @@ class Client:
 					rtpPacket = RtpPacket()
 					rtpPacket.decode(data)
 					
-					currFrameNbr = rtpPacket.seqNum()
-					print("Current Seq Num: " + str(currFrameNbr))
-										
-					if currFrameNbr > self.frameNbr: # Discard the late packet
-						self.frameNbr = currFrameNbr
-						self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
+					currPacketNbr = rtpPacket.seqNum()
+					print("Current Seq Num: " + str(currPacketNbr))
+					
+					marker = rtpPacket.marker()
+					
+					if currPacketNbr > self.packetNbr: # Discard the late packet
+						self.fragmentBuffer.append((currPacketNbr, rtpPacket.getPayload()))
+						if marker == 1:
+							self.fragmentBuffer.sort(key = lambda x: x[0]) #ignore unordered packets
+
+							frame = b''.join([f[1] for f in self.fragmentBuffer])
+							self.updateMovie(self.writeFrame(frame))
+							self.fragmentBuffer.clear()
+
+						self.packetNbr = currPacketNbr
 			except:
 				# Stop listening upon requesting PAUSE or TEARDOWN
 				if self.playEvent.isSet(): 

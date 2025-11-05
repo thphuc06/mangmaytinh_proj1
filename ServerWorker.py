@@ -25,7 +25,9 @@ class ServerWorker:
 	
 	def __init__(self, clientInfo):
 		self.clientInfo = clientInfo
-		
+		self.packetNum = 0  # Global packet counter
+
+
 	def run(self):
 		threading.Thread(target=self.recvRtspRequest).start()
 	
@@ -109,7 +111,7 @@ class ServerWorker:
 			# Close the RTP socket
 			self.clientInfo['rtpSocket'].close()
 			
-	def split_frame(self, data, frameNumber, address, port):
+	def split_frame(self, data, address, port):
 		MTU = 1400
 		packets = math.ceil(len(data) / MTU) #number of packets of 1 frame
 		i = 0
@@ -117,14 +119,15 @@ class ServerWorker:
 			offset = i * MTU
 			chunk = data[offset:offset + MTU]
 
-			seq = frameNumber * 10000 + i
+			# Use global packet counter instead of frameNumber
+			self.packetNum += 1
 			marker = 1 if offset + MTU >= len(data) else 0
-			packet = self.makeRtp(chunk, seq, marker)
+			packet = self.makeRtp(chunk, self.packetNum, marker)
 			self.clientInfo['rtpSocket'].sendto(packet, (address, port))
 
-			time.sleep(0.0001)
+			# time.sleep(0.0001)
 			i += 1
-			
+		
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
 		while True:
@@ -136,21 +139,19 @@ class ServerWorker:
 				
 			data = self.clientInfo['videoStream'].nextFrame() #bytes
 
-			if data: 
-				frameNumber = self.clientInfo['videoStream'].frameNbr()
-		
+			if data:
 				try:
 					address = self.clientInfo['rtspSocket'][1][0]
 					port = int(self.clientInfo['rtpPort'])
 					# self.clientInfo['rtpSocket'].sendto(self.makeRtp(data, frameNumber),(address,port))
-					self.split_frame(data, frameNumber, address, port)
+					self.split_frame(data, address, port)
 				except:
 					print("Connection Error")
 					#print('-'*60)
 					#traceback.print_exc(file=sys.stdout)
 					#print('-'*60)
 	#add marker parameter
-	def makeRtp(self, payload, frameNbr, marker):
+	def makeRtp(self, payload, packetNum, marker):
 		"""RTP-packetize the video data."""
 		version = 2
 		padding = 0
@@ -158,7 +159,7 @@ class ServerWorker:
 		cc = 0
 		# marker = marker
 		pt = 26 # MJPEG type
-		seqnum = frameNbr
+		seqnum = packetNum
 		ssrc = 0 
 		
 		rtpPacket = RtpPacket()
