@@ -33,7 +33,7 @@ class Client:
 		self.requestSent = -1
 		self.teardownAcked = 0
 		self.connectToServer()
-		self.packetNbr = 0 #change from FrameNbr to packet 
+		self.lastFramePacket = 0
 		self.fragmentBuffer = []
 		
 	def createWidgets(self):
@@ -99,27 +99,28 @@ class Client:
 				if data:
 					rtpPacket = RtpPacket()
 					rtpPacket.decode(data)
-					
+
 					currPacketNbr = rtpPacket.seqNum()
 					print("Current Seq Num: " + str(currPacketNbr))
-					
+
 					marker = rtpPacket.marker()
-					
-					if currPacketNbr > self.packetNbr: # Discard the late packet
+
+					if currPacketNbr > self.lastFramePacket:
 						self.fragmentBuffer.append((currPacketNbr, rtpPacket.getPayload()))
+
 						if marker == 1:
-							self.fragmentBuffer.sort(key = lambda x: x[0]) #ignore unordered packets
+							self.fragmentBuffer.sort(key = lambda x: x[0])
 
 							frame = b''.join([f[1] for f in self.fragmentBuffer])
 							self.updateMovie(self.writeFrame(frame))
-							self.fragmentBuffer.clear()
 
-						self.packetNbr = currPacketNbr
+							self.lastFramePacket = currPacketNbr
+							self.fragmentBuffer.clear()
 			except:
 				# Stop listening upon requesting PAUSE or TEARDOWN
-				if self.playEvent.isSet(): 
+				if self.playEvent.isSet():
 					break
-				
+
 				# Upon receiving ACK for TEARDOWN request,
 				# close the RTP socket
 				if self.teardownAcked == 1:
@@ -266,7 +267,10 @@ class Client:
 		#-------------
 		# Create a new datagram socket to receive RTP packets from the server
 		self.rtpSocket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		
+
+		# Set receive buffer size
+		self.rtpSocket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 2097152)
+
 		# Set the timeout value of the socket to 0.5sec
 		self.rtpSocket.settimeout(0.5)
 		
